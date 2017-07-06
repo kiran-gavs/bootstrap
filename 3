@@ -1,0 +1,643 @@
+Create the Cookbook
+1. From your workstation, move to your chef-repo:
+1
+cd chef-repo
+2. Create the cookbook. In this instance the cookbook is titled papache:
+1
+knife cookbook create papache
+3. Move to your cookbook’s newly-created directory:
+1
+cd cookbooks/papache
+4. If you list the files located in the newly-created cookbook, you will see that a
+number of directories and files have been created:
+1
+2
+attributes definitions libraries providers recipes
+templates
+CHANGELOG.md files metadata.rb README.md resources
+default.rb
+The default.rb file in recipes contains the “default” recipe resources.
+Because each section of the LAMP stack (Apache, MySQL, and PHP) will have its
+own recipe, the default.rb file is used to prepare your servers.
+1. From within your papache directory, navigate to the recipes folder:
+1
+cd recipes
+2. Open default.rb and add the Ruby command below, which will run system
+updates:
+~/chef-repo/cookbooks/papache/recipe/default.rb
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+#
+# Cookbook Name:: papache
+# Recipe:: default
+#
+#
+execute "update-upgrade" do
+ command "apt-get update && apt-get upgrade -y"
+ action :run
+end
+Recipes are comprised of a series of resources. In this case,
+the execute resource is used, which calls for a command to be executed
+once. The apt-get update && apt-get upgrade -ycommands are defined in
+the command section, and the action is set to :run the commands.
+This is one of the simpler Chef recipes to write, and a good way to start out.
+Any other start-up procedures that you deem important can be added to the
+file by mimicking the above code pattern.
+3. To test the recipe, add the LAMP stack cookbook to the Chef server:
+1
+knife cookbook upload papache
+4. Add the recipe to your chosen node’s run list, replacing nodename with your
+node’s name:
+1
+knife node run_list add nodename "recipe[papache]"
+5. Because this is the default recipe, the recipe name does not need to be
+defined after papache in the code above.
+6. Access your chosen node and run the chef-client:
+1
+chef-client
+7. It should output a successful Chef run. If not, review your code for any errors,
+usually defined in the output of the chef-client run.
+Apache
+Install and Enable
+1. Create a new file under /recipes called apache.rb. This will contain all of your
+Apache configuration information.
+2. Open the file, and define the package resource to install Apache:
+~/chef-repo/cookbooks/papache/apache.rb
+1
+2
+3
+package "apache2" do
+ action :install
+end
+Again, this is a very basic recipe. The package resource calls to a package
+(apache2). This value must be a legitimate package name. The action
+is install because Apache is being installed in this step. There is no need for
+additional values to run the install.
+3. Apache will also need to be set to turn on at reboot, and start. In the same file,
+add the additional lines of code:
+~/chef-repo/cookbooks/papache/apache.rb
+1
+2
+service "apache2" do
+ action [:enable, :start]
+3end
+This uses the service resource, which calls on the Apache service;
+the enable action enables it upon startup, whereas start will start Apache.
+Save and close the apache.rb file.
+4. To test the Apache recipe, update the LAMP Stack recipe on the server:
+1
+knife cookbook upload papache
+5. Add the recipe to a node’s run-list, replaceing nodename with your chosen
+node’s name:
+1
+knife node run_list add nodename "recipe[papache::apache]"
+6. Because this is not the default.rb recipe the recipe name, apache, must be
+appended to the recipe value.
+7. From that node, run the chef-client:
+1
+chef-client
+8. If the recipe fails due to a syntax error, Chef will note it during the output.
+9. After a successful chef-client run, check to see if Apache is running:
+1
+service apache2 status
+10.It should say that apache2 is running.
+11.Repeat steps 5-7 to upload the cookbook and run chef-client as needed
+through the rest of this guide to ensure your recipes are working properly and
+contain no errors. Remember to replace the recipe name in the run list code
+when adding a new recipe.
+Configure Virtual Hosts
+After the initial installation Apache needs to be configured, starting with its virtual
+hosts files.
+1. Because multiple websites may need to be configured, Chef’s attributes
+feature will be used to define certain aspects of the virtual hosts file(s). Open
+a default.rb file under the attributesdirectory in your cookbook.
+2. Within default.rb, create the default values of the cookbook:
+~/chef-repo/cookbooks/papache/attributes/default.rb
+1
+default["papache"]["sites"]["example.com"] = { "port" => 80,
+"servername" => "example.com", "serveradmin" =>
+"webmaster@example.com" }
+The prefix default defines that these are the normal values to be used in
+the papache where the site example.com will be called upon. This can be
+seen as a hierarchy: Under the cookbook itself are the site(s), which are then
+defined by their URL.
+The following values in the array (defined by curly brackets) are the values
+that will be used to configure the virtual hosts file. Apache will be set to listen
+on port 80, and use the listed values for its server name, and administrator
+email.
+Should you have more than one available website or URL (for
+example, example.org), this syntax should be mimicked for the second URL:
+~/chef-repo/cookbooks/papache/attributes/default.rb
+1
+2
+default["papache"]["sites"]["example.com"] = { "port" => 80,
+"servername" => "example.com", "serveradmin" =>
+"webmaster@example.com" }
+default["papache"]["sites"]["example.org"] = { "port" => 80,
+"servername" => "example.org", "serveradmin" =>
+"webmaster@example.org" }
+3. Return to your apache.rb file under recipes to call the attributes that were just
+defined. Do this with the node resource:
+~/chef-repo/cookbooks/papache/recipes/apache.rb
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+#Install & enable Apache
+package "apache2" do
+ action :install
+end
+service "apache2" do
+ action [:enable, :start]
+end
+#Virtual Hosts Files
+node["papache"]["sites"].each do |sitename, data|
+end
+This calls in the values under ["papache"]["sites"]. Code added to this block
+will be generated for each value, which is defined by the word sitename.
+The data value calls the values that are listed in the array of
+each sitename attribute.
+4. Within the node resource, define a document root. This root will be used to
+define the public HTML files, and any log files that will be generated:
+~/chef-repo/cookbooks/papache/apache.rb
+1
+2
+node["papache"]["sites"].each do |sitename, data|
+ document_root = "/var/www/html/#{sitename}"
+3end
+5. However, this does not create the directory itself. To do so,
+the directory resource should be used, with a true recursive value so all
+directories leading up to the sitename will be created. A permissions value
+of 0755 will allow for the file owner to have full access to the directory, while
+group and regular users will have read and execute privileges:
+~/chef-repo/cookbooks/papache/apache.rb
+1
+2
+3
+4
+5
+6
+7
+8
+9
+node["papache"]["sites"].each do |sitename, data|
+ document_root = "/var/www/html/#{sitename}"
+ directory document_root do
+ mode "0755"
+ recursive true
+ end
+end
+6. The template feature will be used to generate the needed virtual hosts files.
+From the main directory of your papache cookbook navigate to templates, and
+then default:
+1
+cd ~/chef-repo/cookbooks/papache/templates/default
+7. Create a virtual hosts file called virtualhosts.erb. Instead of inputting the
+true values, use Ruby variables. Ruby variables are identified by <%=
+@brackets %> around them and the @symbol. Note the variable names you
+use, they will need to be defined in the recipe file:
+~/chefrepo/cookbooks/papache/templates/default/virtualhosts.erb
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+<VirtualHost *:<%= @port %>>
+ ServerAdmin <%= @serveradmin %>
+ ServerName <%= @servername %>
+ ServerAlias www.<%= @servername %>
+ DocumentRoot <%= @document_root %>/public_html
+ ErrorLog <%= @document_root %>/logs/error.log
+ <Directory <%= @document_root %>/public_html>
+ Require all granted
+ </Directory>
+</VirtualHost>
+Some variables should look familiar. They were created in step 2, when
+naming default attributes.
+8. Return to the apache.rb recipe. In the space after the directory resource, use
+the template resource to call upon the template file just created:
+~/chef-repo/cookbooks/papache/recipes/apache.rb
+1#Virtual Hosts Files
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+node["papache"]["sites"].each do |sitename, data|
+ document_root = "/var/www/html/#{sitename}"
+ directory document_root do
+ mode "0755"
+ recursive true
+ end
+ template "/etc/apache2/sites-available/#{sitename}.conf" do
+ source "virtualhosts.erb"
+ mode "0644"
+ variables(
+ :document_root => document_root,
+ :port => data["port"],
+ :serveradmin => data["serveradmin"],
+ :servername => data["servername"]
+ )
+ end
+end
+The name of the template resource should be the location where the virtual
+host file is placed on the nodes. The source is the name of the template file.
+Mode 0644 gives the owner read and write privileges, and everyone else read
+privileges. The values defined in the variablessection are taken from the
+attributes file, and are the same values that are called upon in the template.
+9. The sites now need to be enabled in Apache, and the server restarted.
+This only should occur if there are changes to the virtual hosts, so
+the notifies value should be added to the template resource.
+What notifies does is notify Chef when things have changed, and only
+then runs the commands:
+~/chef-repo/cookbooks/papache/recipes/apache.rb
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+ template "/etc/apache2/sites-available/#{sitename}.conf" do
+ source "virtualhosts.erb"
+ mode "0644"
+ variables(
+ :document_root => document_root,
+ :port => data["port"],
+ :serveradmin => data["serveradmin"],
+ :servername => data["servername"]
+ )
+ notifies :restart, "service[apache2]"
+ end
+The notifies command names the :action to be committed, then the
+resource, and resource name in square brackets.
+10. notifies can also call on execute commands, which will run a2ensiteand
+enable the sites we’ve made virtual hosts files for. Add the
+following execute command above the template resource code to create
+the a2ensite script:
+~/chef-repo/cookbooks/papache/recipes/apache.rb
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+ directory document_root do
+ mode "0755"
+ recursive true
+ end
+ execute "enable-sites" do
+ command "a2ensite #{sitename}"
+ action :nothing
+ end
+ template "/etc/apache2/sites-available/#{sitename}.conf" do
+The action :nothing directive means the resource will wait to be called on.
+Add it to the template resource code to use it, above the
+previous notifies line:
+~/chef-repo/cookbooks/papache/recipes/apache.rb
+1
+ notifies :run, "execute[enable-sites]"
+11.The paths referenced in the virtual hosts files need to be created. Once more,
+this is done with the directory resource, and should be added before the
+final end tag:
+~/chef-repo/cookbooks/papache/recipes/apache.rb
+1
+2
+3
+4
+5
+6
+7
+ directory "/var/www/html/#{sitename}/public_html" do
+ action :create
+ end
+ directory "/var/www/html/#{sitename}/logs" do
+ action :create
+ end
+Apache Configuration
+With the virtual hosts files configured and your website enabled, you next want to
+configure Apache to efficiently run on your servers. Do this by enabling and
+configuring a multi-processing module (MPM), and editing apache2.conf.
+The MPMs are all located in the mods_available directory of Apache. In this example
+the event MPM will be used, located at /etc/apache2/modsavailable/mpm_event.conf.
+If we were planning on deploying to nodes of varying size
+we would create a template file to replace the original, which would allow for more
+customization of specific variables. In this instance, a cookbook file will be used to
+edit the file.
+Cookbook files are static documents that are run against the document in the same
+locale on your servers – if any changes are made, it makes a backup of the original
+file and replaces it with the new one.
+1. To create a cookbook file navigate to files/default from your cookbook’s
+main directory.
+1
+cd ~/chef-repo/cookbooks/papache/files/default/
+2. Create a file called mpm_event.conf and copy the MPM event configuration
+into it, changing any needed values:
+~/chef-repo/cookbooks/papache/files/default/mpm_event.conf
+1
+2
+3
+4
+5
+6
+7
+8
+9
+<IfModule mpm_event_module>
+ StartServers 2
+ MinSpareThreads 6
+ MaxSpareThreads 12
+ ThreadLimit 64
+ ThreadsPerChild 25
+ MaxRequestWorkers 25
+ MaxConnectionsPerChild 3000
+</IfModule>
+3. Return to apache.rb, and use the cookbook_file resource to call the file we
+just created. Because the MPM will need to be enabled, we’ll use
+the notifies command again, this time to execute a2enmod mpm_event. Add
+this to the end of the apache.rb file:
+~/chef-repo/cookbooks/papache/recipes/apache.rb
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+execute "enable-event" do
+ command "a2enmod mpm_event"
+ action :nothing
+end
+cookbook_file "/etc/apache2/mods-available/mpm_event.conf" do
+ source "mpm_event.conf"
+ mode "0644"
+ notifies :run, "execute[enable-event]"
+end
+4. Within the apache2.conf the KeepAlive value should be set to off, which is
+the only change made within the file. This can be altered through templates or
+cookbook files, although in this instance a simple sed command will be used,
+paired with the execute resource:
+~/chef-repo/cookbooks/papache/recipes/apache.rb
+1
+2
+3
+4
+execute "keepalive" do
+ command "sed -i 's/KeepAlive On/KeepAlive Off/g'
+/etc/apache2/apache2.conf"
+ action :run
+end
+Your apache.rb is now finished!
+MySQL
+Download the MySQL Library
+1. The Chef Supermarket has an OpsCode-maintained MySQL cookbook that
+sets up MySQL lightweight resources/providers (LWRPs) to be used.
+Download and install the cookbook:
+1
+knife cookbook site install mysql
+2. This will also install any and all dependencies required to use the cookbook.
+These dependencies include the smf and yum-mysql-community cookbooks,
+which in turn depend on the rbac and yum cookbooks.
+3. Upload these cookbooks to the server:
+1
+knife cookbook upload mysql --include-dependencies
+4. From the main directory of your LAMP stack cookbook, open
+the metadata.rb file and add a dependency to the MySQL cookbook:
+~/chef-repo/cookbooks/papache/metadata.rb
+1
+depends 'mysql', '~> 6.0'
+Check the MySQL Cookbook’s Supermarket page to ensure this is the latest
+version.
+Create and Encrypt Your MySQL Password
+Chef contains a feature knows as data bags. Data bags store information, and can
+be encrypted to store passwords, and other sensitive data.
+1. Generate a secret key:
+1
+openssl rand -base64 512 > ~/chef-repo/.chef/encrypted_data_bag_secret
+2. Upload this key to your node’s /etc/chef directory, either manually by scp or
+through the use of a recipe and cookbook file.
+3. Create a mysql data bag that will contain the file rtpass.json for the root
+password:
+1
+knife data bag create mysql rtpass.json --secret-file ~/chefrepo/.chef/encrypted_data_bag_secret
+4. You will be asked to edit the rtpass.json file:
+5. ~/chef-repo/data_bags/mysql/rtpass.json
+1
+2
+3
+{
+ "id": "rtpass2.json",
+ "password": "password123"
+4}
+6. Replace password123 with a secure password.
+7. Confirm that the rtpass.json file was created:
+1
+knife data bag show mysql
+8. It should output rtpass.json. To ensure that is it encrypted run:
+1
+knife data bag show mysql rtpass.json
+9. The output will be unreadable due to encryption, and should resemble:
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+WARNING: Encrypted data bag detected, but no secret provided for
+decoding. Displaying encrypted data.
+id: rtpass.json
+password:
+ cipher: aes-256-cbc
+ encrypted_data: wpEAb7TGUqBmdB1TJA/5vyiAo2qaRSIF1dRAc+vkBhQ=
+ iv: E5TbF+9thH9amU3QmGxWmw==
+ version: 1
+user:
+ cipher: aes-256-cbc
+ encrypted_data: VLA00Wrnh9DrZqDcytvo0HQUG0oqI6+6BkQjHXp6c0c=
+ iv: 6V+3ROpW9RG+/honbf/RUw==
+ version: 1
+Set Up MySQL
+With the MySQL library downloaded and an encrypted root password prepared, you
+can now set up the recipe to download and configure MySQL.
+1. Open a new file in recipes called mysql.rb and define the data bag that will
+be used:
+~/chef-repo/cookbooks/papache/recipes/mysql.rb
+1
+mysqlpass = data_bag_item("mysql", "rtpass.json")
+2. Thanks to the LWRPs provided through the MySQL cookbook, the initial
+installation and database creation for MySQL can be done in one resource:
+~/chef-repo/cookbooks/papache/recipes/mysql.rb
+1
+2
+mysqlpass = data_bag_item("mysql", "rtpass.json")
+3
+4
+5
+6
+mysql_service "mysqldefault" do
+ initial_root_password mysqlpass["password"]
+ action [:create, :start]
+end
+mysqldefault is the name of the MySQL service for this container.
+The inital_root_password calls to the value defined in the text above, while
+the action creates the database and starts the MySQL service.
+When running MySQL from your nodes you will need to define the socket:
+mysql -S /var/run/mysqldefault/mysqld.sock -p
+PHP
+1. Under the recipes directory create a new file, php.rb. The commands below
+will install PHP and all the required packages for working with Apache and
+MySQL:
+~/chef-repo/cookbooks/papache/recipes/php.rb
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+package "php5" do
+ action :install
+end
+package "php-pear" do
+ action :install
+end
+package "php-mysql" do
+ action :install
+end
+2. For easy configuration the php.ini file will be created and used as a
+cookbook file, much like the MPM module above. You can either:
+o Add the PHP recipe, run the chef-client, and copy the file from a node
+(located in /etc/php5/apache2/php.ini)
+o The file should be moved to the chefrepo/cookbooks/papache/files/default/
+directory. This can also be
+turned into a template, if that better suits your configuration.
+3. php.ini is a large file. Search and edit the following values to best suit your
+Linodes. The values suggested below are for 2GB Linodes:
+~/chef-repo/cookbooks/papache/files/default/php.ini
+1
+2
+3
+4
+5
+6
+7
+8
+max_execution_time = 30
+memory_limit = 128M
+error_reporting =
+E_COMPILE_ERROR|E_RECOVERABLE_ERROR|E_ERROR|E_CORE_ERROR
+display_errors = Off
+log_errors = On
+error_log = /var/log/php/error.log
+register_globals = Off
+max_input_time = 30
+4. Return to php.rb and add the cookbook file to the recipe:
+~/chef-repo/cookbooks/papache/recipes/php.rb
+1
+2
+3
+4
+5
+cookbook_file "/etc/php5/apache2/php.ini" do
+ source "php.ini"
+ mode "0644"
+ notifies :restart, "service[apache2]"
+end
+5. Because of the changes made to php.ini, a /var/log/php directory needs to
+be made and its ownership set to the Apache user. This is done through
+a notifies command and execute resource, as done previously:
+~/chef-repo/cookbooks/papache/recipes/php.rb
+1
+2
+3
+4
+5
+6
+7
+8
+9
+execute "chownlog" do
+ command "chown www-data /var/log/php"
+ action :nothing
+end
+directory "/var/log/php" do
+ action :create
+ notifies :run, "execute[chownlog]"
+end
+The PHP recipe is now done!
+6. Ensure that your Chef server contains the updated cookbook, and your node’s
+run list is up-to-date:
+1
+2
+knife cookbook upload papache
+knife node run_list add nodename
+"recipe[papache],recipe[papache::apache],recipe[papache::mysql],recipe[
+papache::php]"
+Congratulations!

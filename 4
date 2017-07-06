@@ -1,0 +1,21 @@
+[muralindia@chef attributes]$ pwd
+/home/muralindia/chef-repo/cookbooks/papache/attributes
+[muralindia@chef attributes]$ cat default.rb
+default["papache"]["sites"]["example.com"] = { "port" => 80, "servername" => "example.com", "serveradmin" => "webmaster@example.com" }
+
+
+Template:
+
+[muralindia@chef default]$ pwd
+/home/muralindia/chef-repo/cookbooks/papache/templates/default
+[muralindia@chef default]$ cat virtualhosts.erb
+<VirtualHost *:<%= @port %>>
+        ServerAdmin <%= @serveradmin %>
+        ServerName <%= @servername %>
+        ServerAlias www.<%= @servername %>
+        DocumentRoot <%= @document_root %>/public_html
+        ErrorLog <%= @document_root %>/logs/error.log
+        <Directory <%= @document_root %>/public_html>
+                Require all granted
+        </Directory>
+</VirtualHost>
